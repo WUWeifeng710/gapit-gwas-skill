@@ -33,7 +33,7 @@ gapit-gwas-skill/
 
 This is first and foremost an **agent skill**: a `SKILL.md` playbook plus tested `assets/` that an LLM agent loads and follows. The easiest install — just hand the repo URL to your agent and ask:
 
-> "Install this skill for me: `https://github.com/<your-account>/gapit-gwas-skill`"
+> "Install this skill for me: `https://github.com/WUWeifeng710/gapit-gwas-skill`"
 
 The agent knows where its own skills directory lives (e.g. `~/.dsh/skills/` for dsh, `~/.workbuddy/skills/` for WorkBuddy, `~/.claude/skills/` for Claude Code–style loaders) and will clone it there.
 
