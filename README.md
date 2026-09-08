@@ -103,14 +103,14 @@ mamba run -n gapit Rscript assets/summarize.R /path/to/workdir/gapit_results 0.0
 
 ## Supported input formats
 
-Set `geno$format` in the CONFIG block:
+Set `geno$format` in the CONFIG block (the template implements two fully tested routes):
 
-| `format`             | Input                                                                                                                       | Route                                                                                                                             |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `rdata_basecall_hmp` | Rdata data.frame, variant-rows HapMap layout (sample names in data row 1, calls = A/C/G/T + `-`, factor columns)            | **Fully tested** (3.85 M sites × 320 samples). Handles `G/-/A`-style allele strings; tri-allelic & indel sites dropped and logged |
-| `gd_gm_txt`          | Numeric GD text (rows = taxa, first col = Taxa, values 0/1/2) + GM text (SNP/Chromosome/Position, same order as GD columns) | External MAF/missingness QC, then per-site mean imputation                                                                        |
-| `hapmap_txt`         | Standard HapMap text                                                                                                        | Passed to GAPIT natively via `G=` (no external QC — set `SNP.MAF` in the GAPIT call if filtering is needed)                       |
-| VCF                  | Convert to GD+GM first (bcftools / mglr in-env), then use `gd_gm_txt`                                                       | —                                                                                                                                 |
+| `format`             | Input                                                                                                                       | Route                                                                                                                                              |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `rdata_basecall_hmp` | Rdata data.frame, variant-rows HapMap layout (sample names in data row 1, calls = A/C/G/T + `-`, factor columns)            | **Fully tested** (3.85 M sites × 320 samples). Handles `G/-/A`-style allele strings; tri-allelic & indel sites dropped and logged                  |
+| `gd_gm_txt`          | Numeric GD text (rows = taxa, first col = Taxa, values 0/1/2, NA allowed) + GM text (SNP/Chromosome/Position, same order as GD columns) | External MAF/missingness QC (missingness computed **before** imputation), then per-site mean imputation                                            |
+| standard HapMap text | —                                                                                                                           | **Not handled by the template** (deliberate: an untested route is worse than none). Small data → minimal direct `GAPIT(Y=, G=hmp_df, ...)` call; otherwise offline-convert to GD+GM and use `gd_gm_txt` |
+| VCF                  | Convert to GD+GM first (bcftools / mglr in-env), then use `gd_gm_txt`                                                       | —                                                                                                                                                  |
 
 The phenotype file: first column `Taxa`, one row per sample, remaining columns numeric traits (`NaN`/`NA` allowed — imputed per-trait to the median, counts logged).
 
@@ -118,8 +118,9 @@ The phenotype file: first column `Taxa`, one row per sample, remaining columns n
 
 - **r43 binary pins for `multtest`/`snpStats`**: multtest was removed from newer Bioconductor; bioconda r43 binaries avoid the legacy Biobase source-tarball chain. Never let R auto-install these — GAPIT's load-time `.gapit_require_or_install()` fails under conda R's staged install, so pre-installing everything is mandatory.
 - **External QC, `SNP.MAF = 0` inside GAPIT**: filtering happens once, in the template, with kept/dropped counts logged — no silent double filtering.
-- **Chunked conversion with an input cache**: `gapit_input/gapit_input.rds` lets you re-run with a different model/covariates in minutes instead of re-converting millions of sites. *Changing QC thresholds or input files requires deleting this cache first.*
+- **Chunked conversion with a smart input cache**: `gapit_input/gapit_input_maf<X>_miss<Y>.rds` is **keyed by the QC parameters and auto-invalidated by input-file mtime** — re-running with a different model/PCA reuses the cache; changing MAF/MISS or editing an input file silently triggers a rebuild. No stale-cache footgun.
 - **Hard guards over silent coercion**: triple `stopifnot` on taxa/marker alignment, dimension restoration after `match()`, column-major per-site broadcasting — the known silent-corruption traps are asserted, not assumed.
+- **Cross-engine verified**: the fix pass was independently reviewed by a second model, then validated at runtime — synthetic gold-standard QC test (60 markers → exactly 50 pass, 20 imputed cells), small-cohort alignment test, cache-hit/stale/rebuild behavior, and an end-to-end regression on the real 320-taxa dataset with bit-identical results.
 
 ## Runtime expectations
 
@@ -133,6 +134,17 @@ Measured on 320 taxa × 3.53 M markers × 5 traits, BLINK, 64 cores: **181 min t
 
 ## Changelog
 
+
+### 2026-09-08 — cross-engine verification round (runtime-tested)
+
+An independent second-model review confirmed all 5 findings above (zero false positives), then re-fixed and **runtime-validated** them; this repo now carries that tested version:
+
+- `hapmap_txt` route **removed entirely** instead of patched — an untested code path is worse than none. The template now stops with guidance (minimal direct `GAPIT(Y=, G=)` call, or convert to `gd_gm_txt`).
+- `gd_gm_txt` QC verified by a **synthetic gold-standard test**: 60 markers with 5 high-missing + 5 low-MAF planted → exactly 50 pass, exactly 20 cells imputed.
+- Taxa-overlap guard is now a configurable `MIN_COMMON` (default 20) + ≥ 50 % overlap fraction, with the actual numbers in the error message.
+- Input cache is **self-invalidating**: filename encodes `maf`/`miss`, and any newer input file triggers a rebuild.
+- Newly found during functional testing: GAPIT 4.1 writes `effect` (lowercase) in Kansas result files vs `Effect` in NYC — `summarize.R` now case-normalizes before rbind (previously: rbind crash + **silent loss of Kansas effect values**); recorded as pitfall #9 in `SKILL.md`. Also fixed: `cbind` duplicate-`check.names` crash and mtime NA-propagation crash.
+- End-to-end regression on the real 320-taxa dataset: identical results to pre-fix (37,281 markers / 9.92 % imputed), verify_env exit 0, both R assets parse clean.
 
 ### 2026-09-08 — review & bugfix pass
 

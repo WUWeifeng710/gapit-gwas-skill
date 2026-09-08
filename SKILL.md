@@ -31,8 +31,8 @@ Exit 0 → go to Step 1. Interpretation of failures:
 |---|---|---|
 | 2 | no conda/mamba | **stop, inform user** (do not self-install a package manager) |
 | 3 | env `gapit` missing | create per 0.2 |
-| 4 | deps missing/broken (incl. GAPIT not installed) | repair listed packages per 0.3/0.4; if the R report shows `[MISSING] GAPIT`, install GAPIT per 0.5 |
-| 5 | `library(GAPIT)` fails at load time | a load-time dep broken (0.3) — GAPIT is installed but cannot load |
+| 4 | a dep **or GAPIT itself** is missing/broken (the script prints exact `[MISSING] ...` names) | repair per 0.3/0.4; GAPIT install via 0.5 |
+| 5 | all deps reported present but `library(GAPIT)` load/export check fails | hidden load-time dep or namespace error — rerun the Rscript line to see the load error |
 
 If mamba errors mention lockfiles / "no writable cache directory", that is a **sandbox file-policy denial** on the mamba root — request escalated permissions once with a one-sentence justification; do not detour.
 
@@ -98,14 +98,15 @@ Decide `geno$format` in the run script:
 |---|---|
 | Rdata data.frame of variant-rows, header in row 1, factor sample cols, calls A/C/G/T + `-` | `"rdata_basecall_hmp"` (**fully tested route**, incl. `G/-/A` style alleles) |
 | numeric GD text (col1=taxa) + GM text (SNP/Chr/Pos) | `"gd_gm_txt"` |
-| standard HapMap text (`A/G` alleles, calls incl. het `B`) | `"hapmap_txt"` → GAPIT-native `G=` conversion |
+| standard HapMap text (`A/G` alleles, calls incl. het `B`) | small data: minimal direct call `GAPIT(Y=, G=hmp_df, model=...)` — the template does **not** implement this route; or offline-convert to GD+GM text files (`"gd_gm_txt"`) |
 | VCF | convert first (bcftools/mglr in-env) to gd_gm_txt; log MAF/missing during conversion |
 
 ### 1.3 Preparation + execution — use the tested template
 ```bash
 cp ~/.dsh/skills/34.gapit-gwas/assets/gapit_gwas_run.R ${wd}/gapit_gwas_run.R
 # edit ONLY the CONFIG block: wd, model, pca.total, kinship.algorithm,
-# MAF.min/MISS.max, cutOff, pheno path, geno list (format + paths/columns), outdir, memo
+# MAF.min/MISS.max, cutOff, MIN_COMMON (taxa-alignment floor, lower for tiny tests),
+# pheno path, geno list (format = rdata_basecall_hmp | gd_gm_txt; paths/column names), outdir, memo
 ```
 The template encapsulates (do not re-implement ad hoc):
 - allele parsing: split on `/`, keep sites with **exactly two distinct ACGT tokens** (so `A/C` and `G/-/A` kept; tri-allelic & indel-containing dropped), counts logged;
@@ -115,7 +116,9 @@ The template encapsulates (do not re-implement ad hoc):
 - phenotype NaN → per-trait median with obs/miss counts logged;
 - strict taxa alignment: intersect → reorder GD **rows** and Y rows identically, GM reordered by `match` to GD marker columns, triple `stopifnot` guard;
 - `setwd(outdir)` then `GAPIT(...)` with `SNP.MAF=0` (external QC done), then `saveRDS(GS)`;
-- input cache `gapit_input/gapit_input.rds`: re-runs with different model/params skip conversion entirely.
+- input cache `gapit_input/gapit_input_maf<X>_miss<Y>.rds`: **keyed by QC parameters and auto-invalidated by file mtime** — changing model/PCA reuses the cache; changing MAF/MISS or editing an input file triggers rebuild; force rebuild with `rm` on the cache.
+
+**QC/imputation order is load-bearing**: marker missingness MUST be computed on raw dosages *before* imputation, and imputation uses per-site means (row axis in sites×taxa matrices, column axis in taxa×samples GD).
 
 **Coding pitfalls baked into the template — re-verify if you must edit it:**
 1. GAPIT **4.x**: `GAPIT(Y=, GD=, GM=)` — `GM` is the genetic **map only**; v3-style `GM=hapmap` fails with "Kinship has to be provided or estimated from genotype!!!".
@@ -126,6 +129,7 @@ The template encapsulates (do not re-implement ad hoc):
 6. Factor genotype columns → convert to character before `as.matrix` (level-order trap).
 7. Sample names may live in the **header row stored as data** (row 1), and rs columns may lack coordinates (duplicate IDs).
 8. Result-object layout drifts across versions — probe `names(GS)`; `GS$GWAS` is a data.frame in 4.1.0.
+9. Result CSV headers are **not uniform across the NYC/Kansas file pair**: Kansas writes lowercase `effect`, NYC `Effect` — case-normalize before rbind (assets/summarize.R does; silent data loss otherwise).
 
 ---
 
@@ -144,7 +148,7 @@ Present a compact table and get explicit confirmation (defaults recommended):
 
 ---
 
-## Step 3 – Run GAPIT (detached for long runs)
+## Step 3 – Execution & monitoring
 
 **Runtime budget** (measured: 320 taxa × 3.53 M markers × 5 traits, BLINK, 64 cores / 251 GB): 181 min total; per-trait association 25–40 min (first trait slowest), multi-trait Circle/High-resolution Manhattan tail adds ~30 min AFTER all per-trait CSVs are saved. Scale ~linearly in markers × traits. Peak RAM ≈ several × markers×taxa×8 B (measured ~125 GB): check `free -g`; if headroom < 2× raise MAF or LD-prune first.
 **Rule**: expected wall time > 15 min → run detached:
