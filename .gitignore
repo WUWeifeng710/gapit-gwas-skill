@@ -1,0 +1,7 @@
+.workbuddy/
+.DS_Store
+Thumbs.db
+*.Rhistory
+.RData
+gapit_input/
+*_results/
