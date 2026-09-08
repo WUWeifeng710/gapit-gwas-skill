@@ -16,7 +16,7 @@ Steps:
 - **Step 3** – Run GAPIT; long runs detached with a log, monitored via progress markers.
 - **Step 4** – Summarize per-trait hits (`assets/summarize.R`), then write the mandatory report.
 
-`${SKILL_DIR}` = `~/.dsh/skills/34.gapit-gwas`. All analysis outputs go to `${out_dir}` (default `./<model>_results/`); intermediates/cache to `${wd}/gapit_input/`. GAPIT writes results **into the current working directory** — the template handles `setwd`.
+`${SKILL_DIR}` = `~/.dsh/skills/gapit-gwas`. All analysis outputs go to `${out_dir}` (default `./<model>_results/`); intermediates/cache to `${wd}/gapit_input/`. GAPIT writes results **into the current working directory** — the template handles `setwd`.
 
 ---
 
@@ -24,7 +24,7 @@ Steps:
 
 ### 0.1 Quick check (do this first, every time)
 ```bash
-bash ~/.dsh/skills/34.gapit-gwas/assets/verify_env.sh; echo "exit=$?"
+bash ~/.dsh/skills/gapit-gwas/assets/verify_env.sh; echo "exit=$?"
 ```
 Exit 0 → go to Step 1. Interpretation of failures:
 | exit | meaning | action |
@@ -103,7 +103,7 @@ Decide `geno$format` in the run script:
 
 ### 1.3 Preparation + execution — use the tested template
 ```bash
-cp ~/.dsh/skills/34.gapit-gwas/assets/gapit_gwas_run.R ${wd}/gapit_gwas_run.R
+cp ~/.dsh/skills/gapit-gwas/assets/gapit_gwas_run.R ${wd}/gapit_gwas_run.R
 # edit ONLY the CONFIG block: wd, model, pca.total, kinship.algorithm,
 # MAF.min/MISS.max, cutOff, MIN_COMMON (taxa-alignment floor, lower for tiny tests),
 # pheno path, geno list (format = rdata_basecall_hmp | gd_gm_txt; paths/column names), outdir, memo
@@ -163,7 +163,7 @@ Monitor: `pgrep -f "exec/R --no-echo"` + `ps -o etime,%cpu,rss -p <Rpid>` + `tai
 ## Step 4 – Summarize & report
 
 ```bash
-mamba run -n gapit Rscript ~/.dsh/skills/34.gapit-gwas/assets/summarize.R ${out_dir} 0.01 | tee ${out_dir}/summary_console.txt
+mamba run -n gapit Rscript ~/.dsh/skills/gapit-gwas/assets/summarize.R ${out_dir} 0.01 | tee ${out_dir}/summary_console.txt
 ```
 Produces: per-trait marker count / Bonferroni threshold / significant count / top-5 (SNP, Chr, Pos, P, MAF, Effect, H&B P), `hits_summary.csv`, cross-trait shared significant loci, and the GAPIT-internal `Filter_GWAS_results.csv` echo.
 
